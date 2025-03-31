@@ -38,12 +38,8 @@ class writeNoise:
 
         if not self.hasNoise or not self.noiseTypes:
             return data  # do not has write noise, return directly
-        
-        print("ola")
-        
         data = self.noise2func["volt2Physical"](data, self.cellDesign)
         for noiseType in self.noiseTypes:
-            print(self.noise2func[noiseType])
             data = self.noise2func[noiseType](data, self.config[noiseType])
         result = self.noise2func["physical2Volt"](data, self.cellDesign)
 
