@@ -38,9 +38,12 @@ class writeNoise:
 
         if not self.hasNoise or not self.noiseTypes:
             return data  # do not has write noise, return directly
-
+        
+        print("ola")
+        
         data = self.noise2func["volt2Physical"](data, self.cellDesign)
         for noiseType in self.noiseTypes:
+            print(self.noise2func[noiseType])
             data = self.noise2func[noiseType](data, self.config[noiseType])
         result = self.noise2func["physical2Volt"](data, self.cellDesign)
 
@@ -81,9 +84,17 @@ class writeNoise:
 
     def __add_numerical_variation(self, array: np.ndarray, config: dict) -> np.ndarray:
         if self.config["variation"]["type"] == "gaussian":
-            stdDev = self.config["variation"]["stdDev"]
+            if (stdDev := self.config.get("variation", {}).get("stdDev")) is None:
+                raise KeyError("Configuration missing 'variation.stdDev'")            
             noise = np.random.normal(0, stdDev, array.shape)
             array += noise
+        elif self.config["variation"]["type"] == "bitflip":
+            if (variation := self.config.get("variation", {}).get("value")) is None:
+                raise KeyError("Configuration missing 'variation.value'")
+            r = np.random.random(array.shape)
+            # The only bits that flip are the ones.
+            flip_mask = (array == 1) & (r < variation)
+            array[flip_mask] = 0
         else:
             raise NotImplementedError(
                 "Variation type not implemented. Please check config file."
