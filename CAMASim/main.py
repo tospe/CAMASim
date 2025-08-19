@@ -64,3 +64,30 @@ class CAMASim:
             print("==> Query Latency (ps), Energy (J):", latency, energy)
 
         return results, latency, energy
+    
+    @classmethod
+    def from_preset(cls, preset_name: str, **overrides):
+        """Create CAMASim instance from preset configuration with optional overrides.
+        
+        Args:
+            preset_name: Name of preset configuration ('decision_tree', 'image_search', etc.)
+            **overrides: Optional configuration overrides using CAMConfig methods
+            
+        Example:
+            cam = CAMASim.from_preset('decision_tree', array_size=(64, 64), variation=('bitflip', 0.1))
+        """
+        from CAMASim.config import CAMConfig
+        
+        config_builder = CAMConfig.preset(preset_name)
+        
+        # Apply any overrides
+        for key, value in overrides.items():
+            if hasattr(config_builder, key):
+                method = getattr(config_builder, key)
+                if callable(method):
+                    if isinstance(value, tuple):
+                        config_builder = method(*value)
+                    else:
+                        config_builder = method(value)
+        
+        return cls(config_builder.build())
