@@ -40,10 +40,10 @@ def get_EVACAM_cost(array_config: dict, cell_config: dict):
         # )
         pass
 
-    if cell_config["device"] == "RRAM":
-        evacam_config_path = workingDir.joinpath("configs/ReRAM-2T2R_TCAM.cfg")
-    elif cell_config["device"] == "FeFET":
-        evacam_config_path = workingDir.joinpath("configs/2FeFET_TCAM.cfg")
+    # if cell_config["device"] == "RRAM":
+    #     evacam_config_path = workingDir.joinpath("ReRAM-2T2R_TCAM.cfg")
+    if cell_config["device"] == "FeFET":
+        evacam_config_path = workingDir.joinpath("2FeFET_TCAM.cfg")
     else:
         raise NotImplementedError
 

@@ -101,6 +101,12 @@ class CAMConfig:
                 "query": {"distance": "hamming", "searchScheme": "exact", "bit": 1},
                 "array": {"row": 32, "col": 32, "cell": "ACAM", "bit": 1},
                 "arch": {"SubarraysPerArray": 1, "ArraysPerMat": 1, "MatsPerBank": 1}
+            },
+            "decision_tree_evacam": {
+                "query": {"distance": "rangequery", "searchScheme": "exact", "parameter": 20, "ifAddWriteNoise": 1, "bit": 3},
+                "array": {"row": 128, "col": 128, "cell": "ACAM", "bit": 3, "useEVACAMCost": True},
+                "arch": {"SubarraysPerArray": 4, "ArraysPerMat": 4, "MatsPerBank": 4},
+                "cell": {"device": "FeFET", "writeNoise": {"variation": {"hasVariation": 1, "type": "gaussian"}}}
             }
         }
         
@@ -194,6 +200,19 @@ class CAMConfig:
             if not isinstance(limit, (int, float)) or limit < 0:
                 raise CAMConfigError("Sensing limit must be a non-negative number")
             self._config["array"]["sensing_limit"] = float(limit)
+        return self
+    
+    def use_evacam_cost(self, enabled: bool = False) -> "CAMConfig":
+        """Enable or disable EVACAM cost evaluation.
+        
+        When enabled, CAMASim will use EVACAM's circuit-level modeling for 
+        detailed hardware cost analysis instead of predefined cost configs.
+        Requires EVACAM submodule to be initialized and g++ compiler available.
+        
+        Args:
+            enabled: Whether to use EVACAM cost evaluation (default: True)
+        """
+        self._config["array"]["useEVACAMCost"] = enabled
         return self
     
     # Device Configuration Methods
