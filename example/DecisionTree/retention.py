@@ -172,6 +172,65 @@ def calculateSparsity(thresholdArray: np.ndarray) -> float:
     return empty_cells / total_cells
 
 
+def calculateEnergyMetrics(thresholdArray: np.ndarray, num_tcams: int = 1) -> dict:
+    """
+    Calculate energy consumption metrics for CAM arrays.
+
+    Energy model:
+    - Each active TCAM cell consumes energy during lookup
+    - X-state (don't-care) cells in bottom-right can be power-gated (removed)
+    - Multiple TCAMs consume energy independently
+
+    Args:
+        thresholdArray: shape (num_paths, num_features, 2)
+        num_tcams: number of TCAM chips used
+
+    Returns:
+        Dictionary with energy metrics
+    """
+    num_paths, num_features, _ = thresholdArray.shape
+
+    # Count active (non-NaN) cells
+    active_cells = 0
+    for row_idx in range(num_paths):
+        for col_idx in range(num_features):
+            if not (np.isnan(thresholdArray[row_idx, col_idx, 0]) and
+                    np.isnan(thresholdArray[row_idx, col_idx, 1])):
+                active_cells += 1
+
+    total_cells = num_paths * num_features
+
+    # Energy model (relative units)
+    # Assume each active TCAM cell consumes 1 unit of energy per lookup
+    energy_per_cell_per_lookup = 1.0
+
+    # Base energy: all cells active
+    base_energy = total_cells * energy_per_cell_per_lookup
+
+    # Actual energy: only active cells consume power
+    actual_energy = active_cells * energy_per_cell_per_lookup
+
+    # TCAM overhead: multiple TCAMs have additional routing/control energy
+    tcam_overhead_per_chip = total_cells * 0.05  # 5% overhead per TCAM
+    total_tcam_overhead = tcam_overhead_per_chip * num_tcams
+
+    # Total energy with overhead
+    total_energy = actual_energy + total_tcam_overhead
+
+    return {
+        'total_cells': total_cells,
+        'active_cells': active_cells,
+        'inactive_cells': total_cells - active_cells,
+        'num_tcams': num_tcams,
+        'base_energy': base_energy,
+        'active_cell_energy': actual_energy,
+        'tcam_overhead_energy': total_tcam_overhead,
+        'total_energy': total_energy,
+        'energy_savings': base_energy - total_energy,
+        'energy_efficiency': (1 - total_energy / base_energy) * 100,  # percentage
+    }
+
+
 # ============================================================================
 # Similarity-Based Path Clustering (SPC)
 # ============================================================================
@@ -401,18 +460,18 @@ def DT2Array_SPC(
     return tcam_clusters, num_tcams, thresholdMin, thresholdMax
 
 
-if __name__ == "__main__":
-    # Example usage
-    from sklearn.datasets import load_iris
+def run_example(dataset_name: str, X, y, max_depth: int = 5):
+    """Run ODR and SPC examples on a given dataset."""
 
-    # Load dataset and train a decision tree
-    iris = load_iris()
-    X, y = iris.data, iris.target
-    clf = tree.DecisionTreeClassifier(max_depth=5, random_state=42)
+    # Train a decision tree
+    clf = tree.DecisionTreeClassifier(max_depth=max_depth, random_state=42)
     clf.fit(X, y)
 
     # Standard conversion
+    print("\n" + "=" * 70)
+    print(f"Dataset: {dataset_name}")
     print("=" * 70)
+    print("\n" + "=" * 70)
     print("Standard DT2Array Conversion")
     print("=" * 70)
     thresholdArray, col2featureID, row2classID, tMin, tMax = DT2Array(clf)
@@ -426,6 +485,13 @@ if __name__ == "__main__":
     print(f"Feature order: {col2featureID}")
     print(f"Class order: {row2classID}")
 
+    # Energy metrics for standard conversion
+    energy_original = calculateEnergyMetrics(thresholdArray, num_tcams=1)
+    print(f"\nEnergy Metrics:")
+    print(f"  Active cells: {energy_original['active_cells']} / {energy_original['total_cells']}")
+    print(f"  Total energy: {energy_original['total_energy']:.2f} units")
+    print(f"  Energy efficiency: {energy_original['energy_efficiency']:.2f}%")
+
     # ODR conversion
     print("\n" + "=" * 70)
     print("ODR-Optimized Conversion (Occurrence-Based Double Reordering)")
@@ -437,6 +503,14 @@ if __name__ == "__main__":
     print(f"Feature order (by frequency): {col2featureID_odr}")
     print(f"Class order (rare paths first): {row2classID_odr}")
     print(f"Note: ODR concentrates X-state cells in bottom-right corner")
+
+    # Energy metrics for ODR
+    energy_odr = calculateEnergyMetrics(thresholdArray_odr, num_tcams=1)
+    print(f"\nEnergy Metrics (ODR):")
+    print(f"  Active cells: {energy_odr['active_cells']} / {energy_odr['total_cells']}")
+    print(f"  Total energy: {energy_odr['total_energy']:.2f} units")
+    print(f"  Energy efficiency: {energy_odr['energy_efficiency']:.2f}%")
+    print(f"  Energy savings vs original: {((energy_original['total_energy'] - energy_odr['total_energy']) / energy_original['total_energy'] * 100):.2f}%")
 
     # SPC conversion
     print("\n" + "=" * 70)
@@ -473,6 +547,20 @@ if __name__ == "__main__":
     print(f"Memory efficiency: Paths distributed across {num_tcams} optimized TCAMs")
     print(f"Key benefit: Minimizes wasted capacity by clustering similar paths")
 
+    # Calculate total energy for SPC (sum across all clusters)
+    total_spc_energy = 0
+    total_spc_active_cells = 0
+    for cluster_threshold, _, _ in tcam_clusters:
+        cluster_energy = calculateEnergyMetrics(cluster_threshold, num_tcams=1)
+        total_spc_energy += cluster_energy['total_energy']
+        total_spc_active_cells += cluster_energy['active_cells']
+
+    print(f"\nEnergy Metrics (SPC):")
+    print(f"  Total active cells across all TCAMs: {total_spc_active_cells}")
+    print(f"  Total energy: {total_spc_energy:.2f} units")
+    print(f"  Energy savings vs original: {((energy_original['total_energy'] - total_spc_energy) / energy_original['total_energy'] * 100):.2f}%")
+    print(f"  Energy savings vs ODR: {((energy_odr['total_energy'] - total_spc_energy) / energy_odr['total_energy'] * 100):.2f}%")
+
     # Comparison summary
     print("\n" + "=" * 70)
     print("Comparison Summary")
@@ -483,12 +571,74 @@ if __name__ == "__main__":
     print(f"Original approach:")
     print(f"  - Single TCAM: {num_paths} × {num_features} = {original_capacity} cells")
     print(f"  - Sparsity: {sparsity_original:.3f}")
+    print(f"  - Energy: {energy_original['total_energy']:.2f} units (baseline)")
     print(f"\nODR approach:")
     print(f"  - Single reordered TCAM: {num_paths} × {num_features} = {original_capacity} cells")
     print(f"  - Sparsity: {sparsity_odr:.3f}")
-    print(f"  - Benefit: Enables removal of bottom-right TCAMs")
+    print(f"  - Energy: {energy_odr['total_energy']:.2f} units ({((energy_original['total_energy'] - energy_odr['total_energy']) / energy_original['total_energy'] * 100):.2f}% savings)")
+    print(f"  - Benefit: Enables removal of bottom-right TCAMs, same energy as original (reordering only)")
     print(f"\nSPC approach:")
     print(f"  - {num_tcams} clustered TCAMs: total {spc_capacity} cells")
     print(f"  - Sparsity: {overall_sparsity_spc:.3f}")
     print(f"  - Memory reduction: {(1 - spc_capacity/original_capacity)*100:.1f}%")
-    print(f"  - Benefit: Maximizes utilization, minimizes TCAM count")
+    print(f"  - Energy: {total_spc_energy:.2f} units ({((energy_original['total_energy'] - total_spc_energy) / energy_original['total_energy'] * 100):.2f}% savings)")
+    print(f"  - Benefit: Maximizes utilization, minimizes TCAM count AND reduces energy")
+
+
+if __name__ == "__main__":
+    import pandas as pd
+    from sklearn.datasets import load_iris
+    from sklearn.preprocessing import LabelEncoder
+
+    # Example 1: Iris dataset
+    print("\n" + "#" * 70)
+    print("# EXAMPLE 1: IRIS DATASET")
+    print("#" * 70)
+
+    iris = load_iris()
+    X_iris, y_iris = iris.data, iris.target
+    run_example("Iris", X_iris, y_iris, max_depth=5)
+
+    # Example 2: Credit Approval dataset
+    print("\n\n" + "#" * 70)
+    print("# EXAMPLE 2: CREDIT APPROVAL DATASET")
+    print("#" * 70)
+
+    try:
+        # Load Credit Approval dataset from UCI repository
+        # Dataset: https://archive.ics.uci.edu/dataset/27/credit+approval
+        url = "https://archive.ics.uci.edu/ml/machine-learning-databases/credit-screening/crx.data"
+
+        # Column names (from dataset description)
+        column_names = [
+            'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8',
+            'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'class'
+        ]
+
+        df = pd.read_csv(url, names=column_names, na_values='?')
+
+        # Handle missing values - drop rows with missing values for simplicity
+        df = df.dropna()
+
+        # Separate features and target
+        X_credit = df.drop('class', axis=1)
+        y_credit = df['class']
+
+        # Encode categorical variables
+        le = LabelEncoder()
+        for col in X_credit.columns:
+            if X_credit[col].dtype == 'object':
+                X_credit[col] = le.fit_transform(X_credit[col])
+
+        # Encode target variable (+ and -)
+        y_credit = le.fit_transform(y_credit)
+
+        X_credit = X_credit.values
+
+        print(f"Credit Approval Dataset loaded: {X_credit.shape[0]} samples, {X_credit.shape[1]} features")
+
+        run_example("Credit Approval", X_credit, y_credit, max_depth=5)
+
+    except Exception as e:
+        print(f"Could not load Credit Approval dataset: {e}")
+        print("Skipping Credit Approval example...")
